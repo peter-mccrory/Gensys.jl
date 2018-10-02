@@ -5,8 +5,8 @@
 ```
 gensysct(Γ0, Γ1, c, Ψ, Π)
 gensysct(Γ0, Γ1, c, Ψ, Π, div)
-gensysct(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π)
-gensysct(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
+gensysct(F::GeneralizedSchur, c, Ψ, Π)
+gensysct(F::GeneralizedSchur, c, Ψ, Π, div)
 ```
 
 Generate state-space solution to canonical-form DSGE model.
@@ -47,23 +47,20 @@ If `div` is omitted from argument list, a `div`>1 is calculated.
 * `eu[1]==-1` for existence for white noise η
 * `eu==[-2,-2]` for coincident zeros.
 """
-
-
-
 const ϵ = sqrt(eps()) * 10
 
 function gensysct(Γ0, Γ1, c, Ψ, Π, args...)
-    F = schurfact!(complex(Γ0), complex(Γ1))
+    F = schur!(complex(Γ0), complex(Γ1))
     gensysct(F, c, Ψ, Π, args...)
 end
 
-function gensysct(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π)
+function gensysct(F::GeneralizedSchur, c, Ψ, Π)
     gensysct(F, c, Ψ, Π, new_divct(F))
 end
 
-function gensysct(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
+function gensysct(F::GeneralizedSchur, c, Ψ, Π, div)
     eu = [0, 0]
-    a, b = F[:S], F[:T]
+    a, b = F.S, F.T
     n = size(a, 1)
     
     for i in 1:n
@@ -71,14 +68,14 @@ function gensysct(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
             info("Coincident zeros.  Indeterminacy and/or nonexistence.")
             eu = [-2, -2]
             G1 = Array{Float64, 2}() ;  C = Array{Float64, 1}() ; impact = Array{Float64, 2}()
-            a, b, qt, z = FS[:S], FS[:T], FS[:Q], FS[:Z]
+            a, b, qt, z = FS.S, FS.T, FS.Q, FS.Z
             return G1, C, impact, qt', a, b, z, eu
         end
     end
     movelast = Bool[(real(b[i, i] / a[i, i]) > div) || (abs(a[i, i]) < ϵ) for i in 1:n]
     nunstab = sum(movelast)
-    FS = ordschur!(F, !movelast)
-    a, b, qt, z = FS[:S], FS[:T], FS[:Q], FS[:Z]
+    FS = ordschur!(F, .~movelast)
+    a, b, qt, z = FS.S, FS.T, FS.Q, FS.Z
 
     qt1 = qt[:, 1:(n - nunstab)]
     qt2 = qt[:, (n - nunstab + 1):n]
@@ -125,8 +122,8 @@ function gensysct(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
        eu[2] = 1
     end
 
-    tmat = hcat(eye(n - nunstab), -ueta1 * deta1 * Ac_mul_B(veta1, veta) * (deta \ ueta'))
-    G0 =  vcat(tmat * a, hcat(zeros(nunstab, n - nunstab), eye(nunstab)))
+    tmat = hcat(I, -ueta1 * deta1 * Ac_mul_B(veta1, veta) * (deta \ ueta'))
+    G0 =  vcat(tmat * a, hcat(zeros(nunstab, n - nunstab), I))
     G1 =  vcat(tmat * b, zeros(nunstab, n))
     G1 = G0 \ G1
     usix = (n - nunstab + 1):n
@@ -141,8 +138,8 @@ end
 
 
 
-function new_divct(F::Base.LinAlg.GeneralizedSchur)
-    a, b = F[:S], F[:T]
+function new_divct(F::GeneralizedSchur)
+    a, b = F.S, F.T
     n = size(a, 1)
     div = 0.001
     for i in 1:n
@@ -158,10 +155,13 @@ end
 
 
 function decomposition_svdct!(A)
-    Asvd = svdfact!(A)
-    bigev = find(Asvd[:S] .> ϵ)
-    Au = Asvd[:U][:, bigev]
-    Ad = diagm(Asvd[:S][bigev])
-    Av = Asvd[:V][:, bigev]
+    Asvd = svd!(A)
+    bigev = findall(Asvd.S .> ϵ)
+    Au = Asvd.U[:, bigev]
+    Ad = Diagonal(Asvd.S[bigev])
+    Av = Asvd.V[:, bigev]
     return bigev, Au, Ad, Av
 end
+
+A_mul_Bc(a,b)  = a*adjoint(b)
+Ac_mul_B(a,b) = adjoint(a)*b

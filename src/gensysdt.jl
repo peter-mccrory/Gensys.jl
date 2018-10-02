@@ -5,8 +5,8 @@
 ```
 gensysdt(Γ0, Γ1, c, Ψ, Π)
 gensysdt(Γ0, Γ1, c, Ψ, Π, div)
-gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π)
-gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
+gensysdt(F::GeneralizedSchur, c, Ψ, Π)
+gensysdt(F::GeneralizedSchur, c, Ψ, Π, div)
 ```
 
 Generate state-space solution to canonical-form DSGE model.
@@ -45,20 +45,20 @@ types of `Γ0` and `Γ1`, to match the behavior of Matlab.  Matlab always uses t
 of the Schur decomposition, even if the inputs are real numbers.
 """
 function gensysdt(Γ0, Γ1, c, Ψ, Π, args...)
-    F = schurfact!(complex(Γ0), complex(Γ1))
+    F = schur!(complex(Γ0), complex(Γ1))
     gensysdt(F, c, Ψ, Π, args...)
 end
 
-function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π)
+function gensysdt(F::GeneralizedSchur, c, Ψ, Π)
     gensysdt(F, c, Ψ, Π, new_div(F))
 end
 
 const ϵ = sqrt(eps()) * 10
 
 # Method that does the real work. Work directly on the decomposition F
-function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
+function gensysdt(F::GeneralizedSchur, c, Ψ, Π, div)
     eu = [0, 0]
-    a, b = F[:S], F[:T]
+    a, b = F.S, F.T
     n = size(a, 1)
 
     for i in 1:n
@@ -72,8 +72,8 @@ function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
 
     movelast = Bool[abs(b[i, i]) > div * abs(a[i, i]) for i in 1:n]
     nunstab = sum(movelast)
-    FS = ordschur!(F, !movelast)
-    a, b, qt, z = FS[:S], FS[:T], FS[:Q], FS[:Z]
+    FS = ordschur!(F, .~movelast)
+    a, b, qt, z = FS.S, FS.T, FS.Q, FS.Z
 
 
     gev = hcat(diag(a), diag(b))
@@ -117,8 +117,8 @@ function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
         unique = true
     else
         loose = veta1 - A_mul_Bc(veta, veta) * veta1
-        loosesvd = svdfact!(loose)
-        nloose = sum(abs(loosesvd[:S]) .> ϵ * n)
+        loosesvd = svd!(loose)
+        nloose = sum(abs.(loosesvd.S) .> ϵ * n)
         unique = (nloose == 0)
     end
 
@@ -128,8 +128,8 @@ function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
         info("Indeterminacy. $(nloose) loose endogeneous errors")
     end
 
-    tmat = hcat(eye(n - nunstab), -(ueta * (deta \ veta') * veta1 * A_mul_Bc(deta1, ueta1))')
-    G0 = vcat(tmat * a, hcat(zeros(nunstab, n - nunstab), eye(nunstab)))
+    tmat = hcat(I, -(ueta * (deta \ veta') * veta1 * A_mul_Bc(deta1, ueta1))')
+    G0 = vcat(tmat * a, hcat(zeros(nunstab, n - nunstab), I))
     G1 = vcat(tmat * b, zeros(nunstab, n))
 
     # G0 is always non-singular because by construction there are no zeros on
@@ -145,7 +145,7 @@ function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
     fwt = -Busix \ Ac_mul_B(qt2, Ψ)
     ywt = G0I[:, usix]
 
-    loose = G0I * vcat(etawt1 * (eye(neta) - A_mul_Bc(veta, veta)), zeros(nunstab, neta))
+    loose = G0I * vcat(etawt1 * (I - A_mul_Bc(veta, veta)), zeros(nunstab, neta))
 
     G1 = real(z * A_mul_Bc(G1, z))
     C = real(z * C)
@@ -157,8 +157,8 @@ function gensysdt(F::Base.LinAlg.GeneralizedSchur, c, Ψ, Π, div)
 end
 
 
-function new_div(F::Base.LinAlg.GeneralizedSchur)
-    a, b = F[:S], F[:T]
+function new_div(F::GeneralizedSchur)
+    a, b = F.S, F.T
     n = size(a, 1)
     div = 1.01
     for i in 1:n
@@ -174,10 +174,13 @@ end
 
 
 function decomposition_svd!(A)
-    Asvd = svdfact!(A)
-    bigev = find(Asvd[:S] .> ϵ)
-    Au = Asvd[:U][:, bigev]
-    Ad = diagm(Asvd[:S][bigev])
-    Av = Asvd[:V][:, bigev]
+    Asvd = svd!(A)
+    bigev = findall(Asvd.S .> ϵ)
+    Au = Asvd.U[:, bigev]
+    Ad = Diagonal(Asvd.S[bigev])
+    Av = Asvd.V[:, bigev]
     return bigev, Au, Ad, Av
 end
+
+A_mul_Bc(a,b)  = a*adjoint(b)
+Ac_mul_B(a,b) = adjoint(a)*b
